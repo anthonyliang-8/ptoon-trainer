@@ -12,8 +12,8 @@ No Python, no .NET SDK, no csproj/sln, no tests. Compile with the .NET Framework
 
 ```
 $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-& $csc /nologo /out:bin\PlatoonTrainer.exe src\Mem.cs src\Ue.cs src\Trainer.cs
-& $csc /nologo /out:bin\UeDump.exe        src\Mem.cs src\Ue.cs src\Dump.cs
+& $csc /nologo /target:exe /out:bin\PlatoonTrainer.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll src\Mem.cs src\Ue.cs src\Overlay.cs src\Trainer.cs
+& $csc /nologo /target:exe /out:bin\UeDump.exe src\Mem.cs src\Ue.cs src\Dump.cs
 ```
 
 `bin\*.exe` is committed. Both programs have their own `Main`, so never compile `Trainer.cs` and `Dump.cs` together. Running requires the game to be up (attaches by process name).
