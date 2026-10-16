@@ -1,0 +1,104 @@
+// ===== FUN_140321440 @ 140321440
+
+/* WARNING: Removing unreachable block (ram,0x000140321d88) */
+/* WARNING: Removing unreachable block (ram,0x000140321e7f) */
+/* WARNING: Removing unreachable block (ram,0x000140321e8b) */
+/* WARNING: Removing unreachable block (ram,0x000140321e93) */
+/* WARNING: Removing unreachable block (ram,0x000140321d91) */
+/* WARNING: Globals starting with '_' overlap smaller symbols at the same address */
+
+void FUN_140321440(undefined8 param_1,undefined4 param_2,undefined4 param_3,undefined8 param_4)
+
+{
+  undefined1 auStack_4c8 [80];
+  undefined4 uStack_478;
+  undefined8 uStack_468;
+  undefined4 uStack_460;
+  undefined1 uStack_45c;
+  undefined1 uStack_45b;
+  undefined1 uStack_45a;
+  undefined1 uStack_459;
+  undefined1 uStack_458;
+  undefined8 uStack_450;
+  undefined8 uStack_448;
+  undefined4 uStack_440;
+  undefined8 uStack_438;
+  undefined4 uStack_428;
+  undefined8 uStack_420;
+  undefined4 uStack_418;
+  undefined8 uStack_410;
+  undefined4 uStack_408;
+  undefined4 uStack_404;
+  undefined4 uStack_400;
+  undefined8 uStack_3f8;
+  undefined8 uStack_3e8;
+  undefined4 uStack_3e0;
+  undefined8 uStack_3d8;
+  undefined4 uStack_3d0;
+  undefined8 uStack_3c8;
+  undefined4 uStack_3c0;
+  undefined8 uStack_3b8;
+  undefined4 uStack_3b0;
+  undefined4 uStack_3a8;
+  undefined8 uStack_3a0;
+  undefined8 uStack_390;
+  undefined8 uStack_380;
+  undefined8 uStack_370;
+  undefined8 uStack_360;
+  undefined8 uStack_350;
+  undefined8 uStack_340;
+  undefined8 uStack_330;
+  undefined8 uStack_300;
+  undefined8 uStack_108;
+  undefined8 uStack_100;
+  ulonglong uStack_f8;
+  
+  uStack_f8 = _DAT_14318ec28 ^ (ulonglong)auStack_4c8;
+  uStack_408 = 0;
+  uStack_404 = 0;
+  uStack_400 = 0;
+  uStack_45a = 0;
+  uStack_45b = 0;
+  uStack_478 = 0;
+  uStack_410 = 0;
+  uStack_458 = 0;
+  uStack_460 = 0;
+  uStack_440 = 0;
+  uStack_420 = 0;
+  uStack_468 = 0;
+  uStack_450 = 0;
+  uStack_360 = 0;
+  uStack_340 = 0;
+  uStack_3c8 = 0;
+  uStack_3c0 = 0;
+  uStack_3b8 = 0;
+  uStack_3b0 = 0;
+  uStack_3e8 = 0;
+  uStack_3e0 = 0;
+  uStack_390 = 0;
+  uStack_380 = 0;
+  uStack_330 = 0;
+  uStack_45c = 0;
+  uStack_459 = 0;
+  uStack_448 = 0;
+  uStack_3a8 = 0;
+  uStack_3f8 = 0;
+  uStack_370 = 0;
+  uStack_438 = 0;
+  uStack_3d8 = 0;
+  uStack_3d0 = 0;
+  uStack_350 = 0;
+  uStack_3a0 = 0;
+  uStack_108 = 0;
+  uStack_100 = 0;
+  uStack_428 = param_2;
+  uStack_418 = param_3;
+  uStack_300 = param_4;
+                    /* WARNING: Could not recover jumptable at 0x0001403215e0. Too many branches */
+                    /* WARNING: Treating indirect jump as call */
+  (*(code *)(IMAGE_DOS_HEADER_140000000.e_magic + _UNK_140324140))
+            (IMAGE_DOS_HEADER_140000000.e_magic + _UNK_140324140);
+  return;
+}
+
+
