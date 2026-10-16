@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-// pla_toon offline/bot-match trainer: god mode, infinite ammo, bot-only head aim (hold right mouse).
+// pla_toon offline/bot-match trainer: god mode, infinite ammo, bot-only head aim (hold right mouse), no spread, bot ESP.
 class Trainer
 {
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vKey);
@@ -20,8 +20,23 @@ class Trainer
     static int sHealthComp, sWeapComp, sYawComp, sPitchComp, sHeadHitbox, sIsBotOff, sIsDeadOff;
     static byte sIsBotMask, sIsDeadMask;
     static int hpHealth, wcSelected, wClip, wClipSize, relRot;
+    static int sTeam, sPloOn, povFov;
+    static int[] sHitboxes;
 
-    static volatile bool god, ammo, aim;
+    // No spread: weapon fields (BP_Weapon_C) forced while held, and the recoil-level fields on AC_Soldier_Weapons_C.
+    // recoil_MasterMulti is left alone because AC_HackerFucker_C checks it.
+    static readonly string[] SPREAD_WEAP_FIELDS = { "Accuracy", "shotgunSpread", "movementRecoilMulti", "Recoil_HeatUpRate", "recoil_MaxLevel" };
+    static readonly float[] SPREAD_WEAP_VALUES = { 1f, 0f, 0f, 0f, 0f };
+    static readonly string[] SPREAD_COMP_LEVELS = { "Recoil_Level_R_FromWeap", "Recoil_Level_FromMovement", "Recoil_Level_R_Total" };
+    static int[] wSpread, cLevels;
+    static int cHeatUp, cMaxLevel;
+    static long spreadWeap, spreadComp;
+    static float[] spreadOrig;
+
+    static readonly string[] HITBOXES = { "upperarm_l", "thigh_r", "thigh_l", "lowerarm_r", "lowerarm_l", "head", "hand_r",
+        "upperarm_r", "foot_r", "foot_l", "calf_r", "calf_l", "bodyUpper", "bodyLower", "hand_l" };
+
+    static volatile bool god, ammo, aim, noSpread, esp;
     static volatile float fov = 25f, headZ = 4f;
     static volatile string status = "";
     static long[] soldiers = new long[0];
@@ -36,6 +51,8 @@ class Trainer
         ResolveOffsets();
         new Thread(RefreshLoop) { IsBackground = true }.Start();
         new Thread(TickLoop) { IsBackground = true }.Start();
+        Thread ui = new Thread(delegate() { System.Windows.Forms.Application.Run(new Overlay(m.Pid, EspTargets, delegate { return esp; })); });
+        ui.IsBackground = true; ui.SetApartmentState(ApartmentState.STA); ui.Start();
 
         while (true)
         {
@@ -44,9 +61,11 @@ class Trainer
             if (k == ConsoleKey.D1) god = !god;
             else if (k == ConsoleKey.D2) ammo = !ammo;
             else if (k == ConsoleKey.D3) aim = !aim;
+            else if (k == ConsoleKey.D4) noSpread = !noSpread;
+            else if (k == ConsoleKey.D5) esp = !esp;
             else if (k == ConsoleKey.OemPlus || k == ConsoleKey.Add) fov = Math.Min(180, fov + 5);
             else if (k == ConsoleKey.OemMinus || k == ConsoleKey.Subtract) fov = Math.Max(5, fov - 5);
-            else if (k == ConsoleKey.Q) { god = false; Thread.Sleep(50); RestoreGod(); return; }
+            else if (k == ConsoleKey.Q) { god = false; noSpread = false; Thread.Sleep(50); RestoreGod(); RestoreSpread(); return; }
         }
     }
 
@@ -57,7 +76,9 @@ class Trainer
         Console.WriteLine("  [1] God mode       : {0}", god ? "ON" : "off");
         Console.WriteLine("  [2] Infinite ammo  : {0}", ammo ? "ON" : "off");
         Console.WriteLine("  [3] Bot head aim   : {0}  (hold right mouse)  FOV {1}deg  [+/-]", aim ? "ON" : "off", fov);
-        Console.WriteLine("  [Q] Quit (restores god-mode patch)");
+        Console.WriteLine("  [4] No spread      : {0}", noSpread ? "ON" : "off");
+        Console.WriteLine("  [5] Bot ESP        : {0}  (windowed/borderless only)", esp ? "ON" : "off");
+        Console.WriteLine("  [Q] Quit (restores god-mode and weapon patches)");
         Console.WriteLine();
         Console.WriteLine(status);
     }
@@ -79,6 +100,7 @@ class Trainer
         camPov = ue.PropOffset(cacheProp) + ue.PropOffset(povProp);
         povLoc = ue.Off(viewInfo, "Location");
         povRot = ue.Off(viewInfo, "Rotation");
+        povFov = ue.Off(viewInfo, "FOV");
 
         sHealthComp = ue.Off(clsSoldier, "AC_Soldier_Health");
         sWeapComp = ue.Off(clsSoldier, "AC_Soldier_Weapons");
@@ -95,6 +117,19 @@ class Trainer
         wClip = ue.Off(clsWeapon, "AmmoInClip");
         wClipSize = ue.Off(clsWeapon, "ClipSize");
         relRot = ue.Off(clsScene, "RelativeRotation");
+
+        sTeam = ue.Off(clsSoldier, "Team");
+        p = ue.FindProp(clsSoldier, "plo_On");
+        sPloOn = ue.PropOffset(p) + m.U8(p + Ue.BOOL_BYTEOFFSET); // mask 0x01
+        sHitboxes = new int[HITBOXES.Length];
+        for (int i = 0; i < HITBOXES.Length; i++) sHitboxes[i] = ue.Off(clsSoldier, "playerHitboxes_hb_" + HITBOXES[i]);
+
+        wSpread = new int[SPREAD_WEAP_FIELDS.Length];
+        for (int i = 0; i < wSpread.Length; i++) wSpread[i] = ue.Off(clsWeapon, SPREAD_WEAP_FIELDS[i]);
+        cLevels = new int[SPREAD_COMP_LEVELS.Length];
+        for (int i = 0; i < cLevels.Length; i++) cLevels[i] = ue.Off(clsWeaps, SPREAD_COMP_LEVELS[i]);
+        cHeatUp = ue.Off(clsWeaps, "Recoil_HeatUpRate");
+        cMaxLevel = ue.Off(clsWeaps, "Recoil_MaxRecoilLevel");
     }
 
     // Rescans GObjects for the local controller and all soldiers (slow, so off the tick thread).
@@ -134,6 +169,7 @@ class Trainer
                     if (god) ApplyGod(hp); else RestoreGod();
                     if (god && m.I32(hp + hpHealth) < 100) m.WriteI32(hp + hpHealth, 100);
                     if (ammo) RefillClip(me);
+                    if (noSpread) ApplyNoSpread(me); else RestoreSpread();
                     string target = "";
                     if (aim && (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0) target = Aim(me);
                     if (++n % 50 == 0)
@@ -178,6 +214,39 @@ class Trainer
         if (m.I32(weap + wClip) < size) m.WriteI32(weap + wClip, size);
     }
 
+    // Bullet dir = forward + RandomUnitVector * (1 - Accuracy), plus RecoilBulletRotOffset's
+    // RandomUnitVector * trunc(Recoil_Level_R_Total * 100) * 0.01 * recoil_MasterMulti * 0.4; shotgun pellets add
+    // RandomFloatInRange(-shotgunSpread, shotgunSpread) per axis. Pinning Accuracy=1, shotgunSpread=0 and the recoil
+    // level at 0 zeroes every term. Only the weapon we hold is changed, so bots keep their spread.
+    static void ApplyNoSpread(long me)
+    {
+        long wc = m.Ptr(me + sWeapComp);
+        long weap = wc == 0 ? 0 : m.Ptr(wc + wcSelected);
+        if (weap != spreadWeap || wc != spreadComp)
+        {
+            RestoreSpread(); // previous weapon (swapped, dropped, respawned)
+            if (weap == 0 || !ue.IsA(weap, "BP_Weapon_C")) return;
+            spreadOrig = new float[wSpread.Length];
+            for (int i = 0; i < wSpread.Length; i++) spreadOrig[i] = m.F32(weap + wSpread[i]);
+            spreadWeap = weap; spreadComp = wc;
+        }
+        for (int i = 0; i < wSpread.Length; i++)
+            if (m.F32(weap + wSpread[i]) != SPREAD_WEAP_VALUES[i]) m.WriteF32(weap + wSpread[i], SPREAD_WEAP_VALUES[i]);
+        // The component copies heat-up/max level from the weapon on equip, so pin its copies and levels too.
+        m.WriteF32(wc + cHeatUp, 0f);
+        m.WriteF32(wc + cMaxLevel, 0f);
+        foreach (int o in cLevels) m.WriteF32(wc + o, 0f);
+    }
+
+    static void RestoreSpread()
+    {
+        if (spreadWeap == 0) return;
+        for (int i = 0; i < wSpread.Length; i++) m.WriteF32(spreadWeap + wSpread[i], spreadOrig[i]);
+        m.WriteF32(spreadComp + cHeatUp, spreadOrig[3]);   // Recoil_HeatUpRate
+        m.WriteF32(spreadComp + cMaxLevel, spreadOrig[4]); // recoil_MaxLevel
+        spreadWeap = spreadComp = 0;
+    }
+
     static float[] Vec(long a) { return new float[] { m.F32(a), m.F32(a + 4), m.F32(a + 8) }; }
 
     static float Norm(float a) { a %= 360f; if (a > 180) a -= 360; if (a < -180) a += 360; return a; }
@@ -210,5 +279,67 @@ class Trainer
         m.WriteF32(yawComp + relRot + 4, curYaw + Norm(bestYaw - curYaw));
         m.WriteF32(pitchComp + relRot, bestPitch);
         return "target: " + ue.ObjName(best);
+    }
+
+    // Screen boxes (hitbox bounds) and labels for live enemy bots; called from the overlay thread.
+    static List<EspTarget> EspTargets(int w, int h)
+    {
+        List<EspTarget> list = new List<EspTarget>();
+        long pc = localPC;
+        if (pc == 0) return list;
+        long me = m.Ptr(pc + pcSoldier), cam = m.Ptr(pc + pcCamMgr);
+        float[] eye = Vec(cam + camPov + povLoc), rot = Vec(cam + camPov + povRot);
+        double focal = w / 2.0 / Math.Tan(m.F32(cam + camPov + povFov) * Math.PI / 360);
+        double sp = Math.Sin(rot[0] * Math.PI / 180), cp = Math.Cos(rot[0] * Math.PI / 180);
+        double sy = Math.Sin(rot[1] * Math.PI / 180), cy = Math.Cos(rot[1] * Math.PI / 180);
+        double sr = Math.Sin(rot[2] * Math.PI / 180), cr = Math.Cos(rot[2] * Math.PI / 180);
+        double[] ax = { cp * cy, cp * sy, sp };                                  // forward
+        double[] ay = { sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, -sr * cp }; // right
+        double[] az = { -(cr * sp * cy + sr * sy), cy * sr - cr * sp * sy, cr * cp }; // up
+
+        long[] all = soldiers;
+        int myTeam = me == 0 ? 0 : m.I32(me + sTeam);
+        // Free-for-all puts everyone on one team; then every bot is an enemy.
+        bool teams = false;
+        foreach (long s in all) if (s != me && (m.U8(s + sPloOn) & 1) != 0 && m.I32(s + sTeam) != myTeam) teams = true;
+
+        foreach (long s in all)
+        {
+            if (s == me || (m.U8(s + sIsBotOff) & sIsBotMask) == 0 || (m.U8(s + sIsDeadOff) & sIsDeadMask) != 0) continue;
+            if ((m.U8(s + sPloOn) & 1) == 0 || (teams && m.I32(s + sTeam) == myTeam)) continue;
+            long hp = m.Ptr(s + sHealthComp);
+            int health = hp == 0 ? 0 : m.I32(hp + hpHealth);
+            if (health <= 0) continue;
+
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            bool onScreen = true;
+            foreach (int off in sHitboxes)
+            {
+                long hb = m.Ptr(s + off);
+                if (hb == 0) continue;
+                float[] p = Vec(hb + COMPONENT_TO_WORLD + 0x10);
+                double dx = p[0] - eye[0], dy = p[1] - eye[1], dz = p[2] - eye[2];
+                double z = dx * ax[0] + dy * ax[1] + dz * ax[2];
+                if (z < 1) { onScreen = false; break; } // behind the camera
+                float x = (float)(w / 2.0 + (dx * ay[0] + dy * ay[1] + dz * ay[2]) * focal / z);
+                float y = (float)(h / 2.0 - (dx * az[0] + dy * az[1] + dz * az[2]) * focal / z);
+                minX = Math.Min(minX, x); maxX = Math.Max(maxX, x); minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
+            }
+            if (!onScreen || minX > maxX) continue;
+            // Hitbox centers sit inside the model; pad out to roughly the silhouette.
+            float pad = 0.15f * Math.Max(maxX - minX, maxY - minY) + 2;
+
+            float[] head = Vec(m.Ptr(s + sHeadHitbox) + COMPONENT_TO_WORLD + 0x10);
+            double dist = Math.Sqrt(Math.Pow(head[0] - eye[0], 2) + Math.Pow(head[1] - eye[1], 2) + Math.Pow(head[2] - eye[2], 2)) / 100;
+            long weap = m.Ptr(m.Ptr(s + sWeapComp) + wcSelected);
+            // WeaponName holds placeholders ("Gun1"), so use the class: BP_Weap_AK_C -> AK
+            string weapName = weap == 0 || !ue.IsA(weap, "BP_Weapon_C") ? "" : ue.ClassName(weap).Replace("BP_Weap_", "").Replace("_C", "");
+
+            EspTarget t = new EspTarget();
+            t.Box = new System.Drawing.RectangleF(minX - pad, minY - pad, maxX - minX + 2 * pad, maxY - minY + 2 * pad);
+            t.Text = string.Format("BOT {0}hp {1:F0}m{2}", health, dist, string.IsNullOrEmpty(weapName) ? "" : " " + weapName);
+            list.Add(t);
+        }
+        return list;
     }
 }

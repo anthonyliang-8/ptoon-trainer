@@ -55,3 +55,23 @@ UObject: `+0x0C` InternalIndex, `+0x10` Class, `+0x18` FName, `+0x20` Outer. UPr
 ## Anti-cheat note
 `AC_HackerFucker_C` (on the controller) self-checks M4/AK damage, bullet speed, recoil, fire rate and player health and
 reports to the server. The trainer doesn't touch weapon stats and keeps health at the normal 100.
+
+## Bullet spread / recoil
+Bullet rotation is built in the (non-nativized, bytecode) `BP_Weapon_C`:
+- `GetRecoilLevel` → `trunc(AC_Soldier_Weapons.Recoil_Level_R_Total * 100)`.
+- `RecoilBulletRotOffset(Rand, recoilLevel)` → `RandomUnitVectorFromStream(Rand) * recoilLevel * 0.01 * recoil_MasterMulti * 0.4`.
+- `FireWeapon_SpawnBullet_v2`: normal guns `MakeRotFromX(rotVec + RandomUnitVectorFromStream(rand) * (1 - Accuracy))`;
+  shotguns add `RandomFloatInRangeFromStream(-shotgunSpread, shotgunSpread)` per axis to each pellet.
+- `AC_Soldier_Weapons_C.GetBulletRotBasedOnRecoil` (vtable `+0x600`, impl `0x140355780`) ignores its rand/level args and
+  just returns `WeaponHolder_Trans_R` (`soldier+0x7F0`) world rotation, i.e. the aim direction.
+- Recoil level: `AC_Soldier_Weapons_C` `Recoil_Level_R_FromWeap` / `_FromMovement` / `_R_Total`, plus copies of the
+  weapon's `Recoil_HeatUpRate` / `Recoil_MaxRecoilLevel` (from `recoil_MaxLevel`) taken on equip.
+- **No spread:** on the held weapon only, `Accuracy=1`, `shotgunSpread=0`, `movementRecoilMulti=0`, `Recoil_HeatUpRate=0`,
+  `recoil_MaxLevel=0`; on our weapons component heat-up/max level and the three levels are pinned to 0. Originals are
+  restored when the weapon changes or the feature is turned off. `recoil_MasterMulti` is not touched (anti-cheat checks it).
+
+## ESP
+Screen projection uses `POV.Location/Rotation/FOV` (horizontal FOV) and the 15 `playerHitboxes_hb_*` component
+translations; the box is their screen bounds padded 15%. Bots are pooled: skip ones with `plo_On` (`+0x9C4`) clear.
+In free-for-all every soldier has `Team = 0`, so team filtering only applies when teams differ.
+`BP_Weapon_C.WeaponName` holds placeholders ("Gun1"); the class name (`BP_Weap_AK_C`) is the useful label.
